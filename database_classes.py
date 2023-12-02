@@ -99,6 +99,8 @@ class User(Base):
     def get_user(user_id: int):
         session = Session()
         user = session.get(User, user_id)
+        if user is None:
+            return None
         user.session = session
         return user
 

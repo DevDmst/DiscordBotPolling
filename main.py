@@ -1,5 +1,6 @@
 # This example requires the 'message_content' intent.
 import asyncio
+import logging
 
 import discord
 from discord import Message, Member
@@ -13,6 +14,10 @@ client = discord.Client(intents=intents)
 
 bot_config = utils.load_config_from_file("bot_config.yaml")
 BOT_TOKEN = bot_config["bot_token"]
+
+handler = logging.StreamHandler()
+# handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
+
 
 no = "*не указано*"
 example = {"name": no, "text": no, "date": None, "reactions": [], "channel": None}
@@ -41,6 +46,7 @@ async def on_ready():
 
 @client.event
 async def on_message(message: Message):
+    print(message)
     if message.author == client.user:
         return
     if message.content.startswith('/'):
@@ -63,14 +69,26 @@ async def command_handler(message: Message):
 
     if text.startswith("/help"):
         await message.channel.send(help)
-    if text.startswith("/new_poll"):
+
+    elif text.startswith("/new_poll"):
         await message.channel.send(pool_message)
-    if text.startswith("/pools"):
-        pools = user.pools
-        await message.channel.send(
-            "Текущие опросы: " +
-            '\n'.join([f"{num}. {pool}" for num, pool in enumerate(pools)] +
-            "\n\nДля манипуляций с опросами нужно прописывать индекс опроса." )
+
+    elif text == "/pools":
+        str_pools = '\n'.join([f"{num}. {pool}" for num, pool in enumerate(user.pools)])
+        await message.channel.send(f"Текущие опросы:\n"
+                                   f"{str_pools}\n\n"
+                                   f"Для манипуляций с опросами нужно прописывать индекс опроса.")
+    elif text.startswith("/name"):
+        pass
+
+    elif text.startswith("/text"):
+        pass
+
+    elif text.startswith("/data"):
+        pass
+
+    elif text.startswith("/this"):
+        pass
 
     user.close_session()
 
@@ -85,4 +103,4 @@ def add_new_pool(id, user_id, title, text, end_date, reactions, channel):
                 channel=channel)
 
 
-client.run(BOT_TOKEN)
+client.run(BOT_TOKEN, log_level=logging.INFO, log_handler=handler, root_logger=True)
