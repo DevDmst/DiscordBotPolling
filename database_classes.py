@@ -38,24 +38,32 @@ class ListString(TypeDecorator):
     impl = String
 
     def process_bind_param(self, value, dialect):
-        if value is not None:
+        if value:
             return ','.join(str(x) for x in value)
+        else:
+            return ""
 
     def process_result_value(self, value, dialect):
-        if value is not None:
+        if value:
             return list(map(int, value.split(',')))
+        else:
+            return []
 
 
 class Pool(Base):
     __tablename__ = "poll"
 
-    id = mapped_column(Integer, primary_key=True)
+    id = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id = mapped_column(ForeignKey("users.id"))
+
     title = mapped_column(String)
     text = mapped_column(String)
+    start_date = mapped_column(DateTime)
     end_date = mapped_column(DateTime)
     reactions = mapped_column(ListString, default=[])
-    channel = mapped_column(Integer)
+
+    channel_id = mapped_column(Integer)
+    message_id = mapped_column(Integer)
 
     @staticmethod
     def get_pool(pool_id):
@@ -63,6 +71,12 @@ class Pool(Base):
         bid = session.get(Pool, pool_id)
         bid.session = session
         return bid
+
+    def update(self, need_close_session=False):
+        if hasattr(self, "session"):
+            self.session.commit()
+            if need_close_session:
+                self.session.close()
 
     def close_session(self):
         if hasattr(self, "session"):
@@ -103,6 +117,12 @@ class User(Base):
             return None
         user.session = session
         return user
+
+    def update(self, need_close_session=False):
+        if hasattr(self, "session"):
+            self.session.commit()
+            if need_close_session:
+                self.session.close()
 
     def close_session(self):
         if hasattr(self, "session"):
