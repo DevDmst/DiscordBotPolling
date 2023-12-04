@@ -2,16 +2,39 @@
 import asyncio
 import datetime
 import logging
+from typing import Callable
 
 import discord
 from discord import Message, Member
+from discord.ext import commands
+from discord.ext.commands import Context
+from discord.ui import Button, View
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from icecream import ic
 
 import utils
 from database_classes import Pool, User
 
+# Создайте экземпляр планировщика
+# scheduler = AsyncIOScheduler()
+
+# Установите время запуска (здесь установлено на 2023-12-04 12:00:00)
+# trigger_time = datetime.datetime(2023, 12, 4, 12, 0, 0)
+
+# Запланируйте задачу
+# scheduler.add_job(..., trigger='date', run_date=trigger_time)
+
+# Запустите планировщик
+# scheduler.start()
+
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
+
+description = 'An example bot to showcase the discord.ext.commands'
+
+bot = commands.Bot(command_prefix='/', description=description, intents=intents)
+bot.remove_command('help')
 
 bot_config = utils.load_config_from_file("bot_config.yaml")
 BOT_TOKEN = bot_config["bot_token"]
@@ -27,52 +50,189 @@ help_message = \
     """ Список команд:
     /help - вывести это.
     
+    /new_pool - создать новый опрос.
+        /title <название> - заголовок.
+        /text <текст> - текст опроса.
+        /date_start <t:0000000000:f> - время начала опроса.
+        /date_end <t:0000000001:f> - время окончания опроса.
+        /this - указать канал куда будет публиковаться опрос.
+        /start - начать опрос(или нажать кнопку)
+    
+    /pools - вывети все свои опросы
+    Даты можно получить на сайте https://hammertime.cyou/ru
     """
 
 pool_message = \
-"""Опрос(/exit)
-Заголовок: {0} (/title <название>)
-Текст: {1} (/text <текст>)
-Время начала опроса: {2} (/date_start <t:1701663900:f>)
-Время окончания: {3} (/date_end <t:1701663910:f>)
-Разрешённые реакции: {4} (для указания укажите реакции на данное сообщение)
-В каком канале: {5} (/this)
+    """Опрос(/exit)
+    Заголовок: {0} (/title <название>)
+    Текст: {1} (/text <текст>)
+    Время начала опроса: {2} (/start_date \<t:1701663900:f>)
+    Время окончания: {3} (/end_date \<t:1701663910:f>)
+    Разрешённые реакции: {4} (для указания укажите реакции на данное сообщение)
+    В каком канале: <#{5}> (/this)
+    
+    Даты можно получить на сайте https://hammertime.cyou/ru
+    Начать опрос: /start
+    """
 
-Даты можно получить на сайте https://hammertime.cyou/ru
-Начать опрос: /start
-"""
+pools_message = \
+"""Список твоих опросов:
+ {0}"""
 
+pools_pool_message = "\"```{0}```\" от {1} до {2} в канале <#{3}> с реакциями \"{4}\""
 
-@client.event
-async def on_ready():
-    print(f'We have logged in as {client.user}')
+def get_user(discord_user: Member):
+    user = User.get_user(discord_user.id)
+    if user is None:
+        User.add_new_user(discord_user.id, discord_user.name, discord_user.global_name)
+        user = User.get_user(discord_user.id)
+    return user
 
+async def delete_message(interaction: discord.Interaction):
+    await interaction.response.delete()
 
-@client.event
-async def on_message(message: Message):
+async def create_view(*args):
+#     btn = Button(label=label)
+#     btn.callback = callback
+    view = View()
+    view.add_item(*args)
+    return view
 
-    if message.author == client.user:
+async def check_editing_pool(ctx: Context, user):
+    if not user.editing_pool:
+        await ctx.send("У Вас нет текущих опросов.")
+        return False
+    return True
+
+@bot.command()
+async def help(ctx: Context):
+    await ctx.send(help_message)
+
+@bot.command()
+async def pools(ctx: Context):
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
         return
-    if message.content.startswith('/'):
-        await command_handler(message)
+
+    output = ""
+    for i in user.pools:
+        output += pools_pool_message.format(
+            i.title if i.title else no,
+            i.start_date if i.start_date else no,
+            i.end_date if i.end_date else no,
+            ''.join(i.reactions) if i.reactions else no,
+            f"<#{i.channel_name}>" if i.channel_name else no,
+            )
+
+    return pools_pool_message.format(output)
 
 
-async def command_handler(message: Message):
+@bot.command()
+async def new_pool(ctx: Context, *args):
+    user = get_user(ctx.author)
+    if user.editing_pool:
+        await ctx.send("Вы не можете начать создавать новый опрос, "
+                       "пока не завершили старый. Чтобы завершить старый опрос,"
+                       " введите команду /exit_", delete_after=5)
+    else:
+        pool = Pool()
+        user.pools.append(pool)
+        user.update()
+
+        user.editing_pool = pool.id
+        message_ = await ctx.send(format_pool(pool))
+        pool.message_id = message_.id
+
+        user.update(True)
+
+@bot.command()
+async def exit_(ctx: Context, *args):
+    user = get_user(ctx.author)
+    if user.editing_pool:
+        user.editing_pool = None
+    user.update(True)
+    await ctx.send('Готово. Можете создавать новый опрос!')
+
+@bot.command()
+async def title(ctx: Context, *args):
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
+        return
+
+    title = ' '.join(args)
+    pool = user.get_editing_pool()
+    pool.title = title
+    pool.update()
+    await edit_message_pool(ctx.message, pool)
+
+    user.close_session()
+    pool.close_session()
+
+
+@bot.command()
+async def text(ctx, *args):
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
+        return
+
+    text = ' '.join(args)
+    pool = user.get_editing_pool()
+    pool.text = text
+    pool.update()
+    await edit_message_pool(ctx.message, pool)
+
+    user.close_session()
+    pool.close_session()
+
+
+@bot.command()
+async def start_date(ctx, datetime_formatted):
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
+        return
+
+    pool = user.get_editing_pool()
+    pool.start_date = utils.convert_formatted_timestamp_to_datetime(datetime_formatted)
+    pool.update()
+    await edit_message_pool(ctx.message, pool)
+
+    user.close_session()
+    pool.close_session()
+
+
+@bot.command()
+async def end_date(ctx, datetime_formatted):
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
+        return
+
+    pool = user.get_editing_pool()
+    pool.end_date = utils.convert_formatted_timestamp_to_datetime(datetime_formatted)
+    pool.update()
+    await edit_message_pool(ctx.message, pool)
+
+    user.close_session()
+    pool.close_session()
+
+
+@bot.command()
+async def this(ctx, *args):
+
+    pass
+
+
+@bot.command()
+async def start(ctx, ):
+    """Repeats a message multiple times."""
+    pass
+
+
+async def handle_private_messages(user, is_editing_pool_exist, message, text):
     text: str = message.content
     author: Member = message.author
 
-    # TODO нужно добавить разрешения для бота Permissions.manage_messages
-    # await message.delete()
-
-    # TODO сделать так, чтобы создавать и редактировать опрос можно было только в личных сообщениях с ботом.
-    # в канале же должны быть только активны две команды - this и start(если пользователь решит
-    # запустить опрос самостоятельно, а не через запланированную дату start_date)
-
     if not is_user_added_to_db(author.id):
         User.add_new_user(author.id, author.name, author.global_name)
-
-    user: User = User.get_user(author.id)
-    is_editing_pool_exist = True if user.editing_pool else False
 
     if text.startswith("/eval"):
         await message.channel.send(eval(text[6:]))
@@ -147,11 +307,6 @@ async def command_handler(message: Message):
 
             await edit_message_pool(message, pool)
 
-    elif text.startswith("/this"):
-        # TODO получить реакции с сообщения и сохранить их в pool.reactions
-        # получить id канала и сохранить его в pool.channel_id
-        pass
-
     user.close_session()
 
 
@@ -159,21 +314,23 @@ async def edit_message_pool(message, pool):
     message = message.channel.get_partial_message(pool.message_id)
     await message.edit(content=format_pool(pool))
 
-
 def format_pool(pool: Pool) -> str:
     return pool_message.format(
         pool.title if pool.title else no,
         pool.text if pool.text else no,
         utils.convert_datetime_to_formatted_timestamp(pool.start_date) if pool.start_date else no,
         utils.convert_datetime_to_formatted_timestamp(pool.end_date) if pool.end_date else no,
-        ('['+''.join(pool.reactions)+']') if pool.reactions else no,
-        pool.channel_id if pool.channel_id else no,
+        ('[' + ''.join(pool.reactions) + ']') if pool.reactions else no,
+        f"<#{pool.channel_id}>" if pool.channel_id else no,
     )
 
-def is_user_added_to_db(id: int):
+def is_user_added_to_db(id: int) -> bool:
     if User.get_user(id):
         return True
     return False
 
+async def counter():
+    while True:
+        ...
 
-client.run(BOT_TOKEN, log_level=logging.INFO, log_handler=handler, root_logger=True)
+bot.run(BOT_TOKEN, log_level=logging.INFO, log_handler=handler, root_logger=True)

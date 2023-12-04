@@ -118,6 +118,15 @@ class User(Base):
         user.session = session
         return user
 
+    @staticmethod
+    def get_all_users():
+        session = Session()
+        stmt = select(User)
+        users = session.scalars(stmt).fetchall()
+        session.close()
+        return users
+
+
     def update(self, need_close_session=False):
         if hasattr(self, "session"):
             self.session.commit()

@@ -20,9 +20,9 @@ def save_config_to_file(dict_file, file_path):
 
 
 def convert_datetime_to_formatted_timestamp(date_time: datetime.datetime):
-    return f"<t:{date_time.timestamp()}:f>"
+    return f"<t:{int(date_time.timestamp())}:f>"
 
 
 def convert_formatted_timestamp_to_datetime(timestamp: str):
-    timestamp = timestamp[3:-3]
+    timestamp = int(timestamp[3:-3])
     return datetime.datetime.fromtimestamp(timestamp)
