@@ -2,6 +2,7 @@ import datetime
 import json
 import os.path
 from copy import copy
+from enum import Enum
 from typing import List
 
 import sqlalchemy
@@ -48,10 +49,18 @@ class ListString(TypeDecorator):
             return list(map(int, value.split(',')))
         else:
             return []
+#
+#
+# class PoolStatus(Enum):
+#     CURRENT = "текущий редактируемый"
+#     COMPLETED = "завершённый"
+#     NOT_STARTED = "не начатый"
 
 
 class Pool(Base):
     __tablename__ = "poll"
+
+
 
     id = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id = mapped_column(ForeignKey("users.id"))
@@ -64,6 +73,14 @@ class Pool(Base):
 
     channel_id = mapped_column(Integer)
     message_id = mapped_column(Integer)
+
+    # def get_status(self):
+    #     now = datetime.datetime.utcnow()
+    #     if now >= self.end_date:
+    #         return PoolStatus.COMPLETED
+    #     elif now < self.start_date:
+    #         return PoolStatus.NOT_STARTED
+    #     return
 
     @staticmethod
     def get_pool(pool_id):
