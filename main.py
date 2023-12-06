@@ -7,7 +7,7 @@ from typing import Callable
 import discord
 from discord import Message, Member, TextChannel, Embed
 from discord.ext import commands
-from discord.ext.commands import Context
+from discord.ext.commands import Context, CheckFailure
 from discord.ui import Button, View
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from icecream import ic
@@ -54,7 +54,7 @@ help_message = \
         /text <текст> - текст опроса.
         /start_date \<t:0000000000:f> - время начала опроса.
         /end_date \<t:0000000001:f> - время окончания опроса.
-        /this - указать канал куда будет публиковаться опрос.
+        /where  <link> - указать канал куда будет публиковаться опрос.
         /start - начать опрос(или нажать кнопку)
     
     /pools - показать все опросы
@@ -68,7 +68,7 @@ pool_message = \
     Время начала опроса: {2} (/start_date \<t:1701663900:f>)
     Время окончания: {3} (/end_date \<t:1701663910:f>)
     Разрешённые реакции: {4} (для указания укажите реакции на данное сообщение)
-    В каком канале: <#{5}> (/this)
+    В каком канале: {5} (/where <link>)
     
     Даты можно получить на сайте https://hammertime.cyou/ru
     Начать опрос: /start
@@ -87,10 +87,6 @@ def get_user(discord_user: Member) -> User:
         User.add_new_user(discord_user.id, discord_user.name, discord_user.global_name)
         user = User.get_user(discord_user.id)
     return user
-
-
-async def delete_message(interaction: discord.Interaction):
-    await interaction.response.delete()
 
 
 async def create_view(*args):
@@ -250,11 +246,29 @@ async def end_date(ctx, datetime_formatted):
 
 
 @bot.command()
-async def where(ctx: Context, link):
-    # TODO пользователь должен скопировать ссылку на канал и вставить её как аргумент
-    # проверить ссылку на корректность
-    # ссылка будет формата https://discord.com/channels/1180510913149800478/1180510913149800481
-    ...
+async def where(ctx: Context, *args):
+
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
+        return
+
+    link = " ".join(args)
+    try:
+        channel_id = int(link[link.rfind("/") + 1:])
+    except:
+        await ctx.send("Введите команду в формате: /where \\<link>. Например:\n"
+                       "https://discord.com/channеls/1180510913149800478/1180510913149800481", delete_after=7)
+        user.close_session()
+        return
+
+    pool = user.get_editing_pool()
+    pool.channel_id = channel_id
+
+    await update_chat__creating_pool(ctx, pool)
+
+    pool.update()
+    user.close_session()
+    pool.close_session()
 
 
 @bot.command()
@@ -269,9 +283,16 @@ async def start(ctx, ):
 @text.error
 @start_date.error
 @end_date.error
+@where.error
 @pools.error
 async def handler_creating_pool_errors(ctx: Context, error):
-    await ctx.send("Данная команда доступна только в личных сообщениях бота")
+    if isinstance(error, CheckFailure):
+        await ctx.message.delete(delay=4)
+        await ctx.send("Данная команда доступна только в личных сообщениях бота", delete_after=3.5)
+    else:
+        await ctx.send(error)
+        logging.error(error)
+
 
 def pool_str_representation(pool: Pool):
     return f"Опрос: {pool.title}\n\n{pool.text}"
@@ -291,11 +312,6 @@ def format_pool(pool: Pool) -> str:
         ('[' + ''.join(pool.reactions) + ']') if pool.reactions else no,
         f"<#{pool.channel_id}>" if pool.channel_id else no,
     )
-
-
-async def counter():
-    while True:
-        ...
 
 
 bot.run(BOT_TOKEN, log_level=logging.INFO, log_handler=handler, root_logger=True)
