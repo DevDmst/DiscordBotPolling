@@ -123,6 +123,7 @@ async def on_ready():
 
 
 @bot.command()
+@commands.check(is_private_chat)
 async def help(ctx: Context):
     await ctx.send(help_message)
 
@@ -142,7 +143,13 @@ async def pools(ctx: Context):
             ''.join(i.reactions) if i.reactions else no,
         )
 
-    return pools_pool_message.format(output)
+    await ctx.send(output)
+    # mess = await channel.send('Набор в игру')
+    # await asyncio.sleep(10)
+    # mess = await ctx.channel.fetch_message(mess.id)
+    # if yes_react := discord.utils.get(mess.reactions, emoji=ctx.guild.get_emoji(471483388532742130)):
+    #     async for user in yes_react.users:
+    #         print(str(user))  # выведет всех пользователей поставивших реакцию в консоль
 
 
 @bot.command()
@@ -247,7 +254,6 @@ async def end_date(ctx, datetime_formatted):
 
 @bot.command()
 async def where(ctx: Context, *args):
-
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
         return
