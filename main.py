@@ -5,7 +5,8 @@ import logging
 from typing import Callable
 
 import discord
-from discord import Message, Member, TextChannel, Embed
+from discord import Message, Member, TextChannel, Embed, Interaction, InteractionResponse
+from discord._types import ClientT
 from discord.ext import commands
 from discord.ext.commands import Context, CheckFailure
 from discord.ui import Button, View
@@ -81,6 +82,42 @@ pools_message = \
 pools_pool_message = "\"```{0}```\" от {1} до {2} в канале <#{3}> с реакциями \"{4}\""
 
 
+class MyPopup(discord.ui.Modal, title="Добавление кнопки"):
+    button = discord.ui.TextInput(
+        style=discord.TextStyle.short,
+        label="Название кнопки",
+        required=True,
+        placeholder="",
+    )
+
+    async def on_submit(self, interaction: Interaction) -> None:
+
+        user_id = interaction.user.id
+        user = User.get_user(user_id)
+        pool = user.get_editing_pool()
+        button_name = self.button.value
+        if button_name:
+            pool.buttons.append({button_name: []})
+        else:
+            raise ValueError()
+
+
+        # нужно обязательно ответить, иначе ошибка
+        response: InteractionResponse = interaction.response
+        try:
+            await response.edit_message(content=format_pool(pool), view=create_view_for_editing_pool(pool))
+        except:
+            pass
+        pool.update(True)
+        user.close_session()
+
+    async def on_error(self, interaction: Interaction[ClientT], error: Exception, /) -> None:
+        logging.error(error)
+
+async def callback_add_button(interaction: Interaction):
+    popup = MyPopup()
+    await interaction.response.send_modal(popup)
+
 def get_user(discord_user: Member) -> User:
     user = User.get_user(discord_user.id)
     if user is None:
@@ -107,7 +144,7 @@ async def check_editing_pool(ctx: Context, user: User):
 async def update_chat__creating_pool(ctx, pool):
     old_msg = await ctx.channel.fetch_message(pool.message_id)
     await old_msg.delete()
-    new_msg = await ctx.send(content=format_pool(pool), suppress_embeds=True)
+    new_msg = await ctx.send(content=format_pool(pool), view=create_view_for_editing_pool(pool), suppress_embeds=True)
     pool.message_id = new_msg.id
 
 
@@ -170,7 +207,7 @@ async def new_pool(ctx: Context, *args):
         user.update()
 
         user.editing_pool = pool.id
-        message_ = await ctx.send(format_pool(pool), suppress_embeds=True)
+        message_ = await ctx.send(format_pool(pool), view=create_view_for_editing_pool(pool), suppress_embeds=True)
         pool.message_id = message_.id
 
         user.update(True)
@@ -278,7 +315,7 @@ async def where(ctx: Context, *args):
 
 @bot.command()
 @commands.check(is_private_chat)
-async def start(ctx: Context, index: int=0):
+async def start(ctx: Context, index: int = 0):
     """Отправить опрос по индексу в чат"""
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
@@ -343,6 +380,38 @@ def pool_str_representation(pool: Pool):
 async def edit_message_pool(message, pool):
     message = message.channel.get_partial_message(pool.message_id)
     await message.edit(content=format_pool(pool))
+
+
+
+
+    # name = interaction.client.user.global_name
+    # text = interaction.message.content
+    # user_id = interaction.user.id
+    # user = User.get_user(user_id)
+    # pool = user.get_editing_pool()
+    #
+    # pool.buttons.append({text: []})
+    #
+    # pool.update(True)
+    # user.close_session()
+    # # interaction.channel.send()
+
+
+def create_view_for_editing_pool(pool: Pool):
+    buttons = []
+    if pool.buttons:
+        for button in pool.buttons:
+            buttons.append(Button(label=button))
+    else:
+        pool.buttons = []
+    view = View()
+    button = Button(label="Добавить кнопку")
+    button.callback = callback_add_button
+    view.add_item(button)
+
+    for button in buttons:
+        view.add_item(button)
+    return view
 
 
 def format_pool(pool: Pool) -> str:

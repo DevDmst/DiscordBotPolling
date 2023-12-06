@@ -50,6 +50,21 @@ class ListString(TypeDecorator):
         else:
             return []
 
+class DictString(TypeDecorator):
+    impl = String
+
+    def process_bind_param(self, value, dialect):
+        if value:
+            return json.dumps(value)
+        else:
+            return "[]"
+
+    def process_result_value(self, value, dialect):
+        if value:
+            return json.loads(value)
+        else:
+            return []
+
 class PoolStatus(PythonEnum):
     COMPLETED = "завершённый"
     NOT_STARTED = "не начатый"
@@ -72,14 +87,7 @@ class Pool(Base):
     message_id = mapped_column(Integer)
 
     status = mapped_column(Enum(PoolStatus))
-
-    # def get_status(self):
-    #     now = datetime.datetime.utcnow()
-    #     if now >= self.end_date:
-    #         return PoolStatus.COMPLETED
-    #     elif now < self.start_date:
-    #         return PoolStatus.NOT_STARTED
-    #     return
+    buttons = mapped_column(DictString, default=[])
 
     @staticmethod
     def get_pool(pool_id):
