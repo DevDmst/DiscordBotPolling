@@ -111,9 +111,7 @@ async def update_chat__creating_pool(ctx, pool):
 
 
 def is_private_chat(ctx: Context):
-    if ctx.channel.type.name == "private":
-        return True
-    return False
+    return ctx.channel.type.name == "private"
 
 
 @bot.event
