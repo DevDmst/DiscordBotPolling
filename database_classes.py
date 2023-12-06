@@ -2,12 +2,12 @@ import datetime
 import json
 import os.path
 from copy import copy
-from enum import Enum
+from enum import Enum as PythonEnum
 from typing import List
 
 import sqlalchemy
 from sqlalchemy import create_engine, MetaData, Table, Integer, String, \
-    DateTime, ForeignKey, Numeric, select, PickleType, TypeDecorator, Date, ARRAY, Time, Boolean, TEXT, Tuple
+    DateTime, ForeignKey, Numeric, select, PickleType, TypeDecorator, Date, ARRAY, Time, Boolean, TEXT, Tuple, Enum
 from sqlalchemy.ext.mutable import MutableList
 from sqlalchemy.orm import declarative_base
 
@@ -49,18 +49,15 @@ class ListString(TypeDecorator):
             return list(map(int, value.split(',')))
         else:
             return []
-#
-#
-# class PoolStatus(Enum):
-#     CURRENT = "текущий редактируемый"
-#     COMPLETED = "завершённый"
-#     NOT_STARTED = "не начатый"
+
+class PoolStatus(PythonEnum):
+    COMPLETED = "завершённый"
+    NOT_STARTED = "не начатый"
+    PUBLISHED = "сейчас в публикации"
 
 
 class Pool(Base):
     __tablename__ = "poll"
-
-
 
     id = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id = mapped_column(ForeignKey("users.id"))
@@ -73,6 +70,8 @@ class Pool(Base):
 
     channel_id = mapped_column(Integer)
     message_id = mapped_column(Integer)
+
+    status = mapped_column(Enum(PoolStatus))
 
     # def get_status(self):
     #     now = datetime.datetime.utcnow()

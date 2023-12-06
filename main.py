@@ -13,7 +13,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from icecream import ic
 
 import utils
-from database_classes import Pool, User
+from database_classes import Pool, User, PoolStatus
 
 # Создайте экземпляр планировщика
 # scheduler = AsyncIOScheduler()
@@ -144,12 +144,6 @@ async def pools(ctx: Context):
         )
 
     await ctx.send(output)
-    # mess = await channel.send('Набор в игру')
-    # await asyncio.sleep(10)
-    # mess = await ctx.channel.fetch_message(mess.id)
-    # if yes_react := discord.utils.get(mess.reactions, emoji=ctx.guild.get_emoji(471483388532742130)):
-    #     async for user in yes_react.users:
-    #         print(str(user))  # выведет всех пользователей поставивших реакцию в консоль
 
 
 @bot.command()
@@ -187,6 +181,7 @@ async def new_pool(ctx: Context, *args):
     description="Устанавливает заголовок для текущего опроса",
     brief="Устанавливает заголовок",
 )
+@commands.check(is_private_chat)
 async def title(ctx: Context, *args):
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
@@ -204,6 +199,7 @@ async def title(ctx: Context, *args):
 
 
 @bot.command()
+@commands.check(is_private_chat)
 async def text(ctx, *args):
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
@@ -221,6 +217,7 @@ async def text(ctx, *args):
 
 
 @bot.command()
+@commands.check(is_private_chat)
 async def start_date(ctx, datetime_formatted):
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
@@ -237,6 +234,7 @@ async def start_date(ctx, datetime_formatted):
 
 
 @bot.command()
+@commands.check(is_private_chat)
 async def end_date(ctx, datetime_formatted):
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
@@ -253,6 +251,7 @@ async def end_date(ctx, datetime_formatted):
 
 
 @bot.command()
+@commands.check(is_private_chat)
 async def where(ctx: Context, *args):
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
@@ -278,7 +277,29 @@ async def where(ctx: Context, *args):
 
 
 @bot.command()
-async def start(ctx, ):
+@commands.check(is_private_chat)
+async def start(ctx: Context, index: int=0):
+    """Отправить опрос по индексу в чат"""
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
+        return
+
+    pool = user.get_editing_pool()
+    pool_str = pool_str_representation(pool)
+    if pool.channel_id:
+        await bot.get_channel(pool.channel_id).send(pool_str, suppress_embeds=True)
+    else:
+        await ctx.send("Прежде чем отправлять опрос, укажите канал для отправки (команда /where)", suppress_embeds=True)
+    pool.status = PoolStatus.PUBLISHED
+
+    pool.update()
+    user.close_session()
+    pool.close_session()
+
+
+@bot.command()
+@commands.check(is_private_chat)
+async def run(ctx, ):
     """Отправить опрос в чат"""
     pass
 
@@ -299,6 +320,21 @@ async def handler_creating_pool_errors(ctx: Context, error):
         await ctx.send(error)
         logging.error(error)
 
+
+# async def send_pool_to_chat():
+#     user = get_user(ctx.author)
+#     if not await check_editing_pool(ctx, user):
+#         return
+#
+#
+#     pool = user.get_editing_pool()
+#     pool.channel_id = channel_id
+#
+#     await update_chat__creating_pool(ctx, pool)
+#
+#     pool.update()
+#     user.close_session()
+#     pool.close_session()
 
 def pool_str_representation(pool: Pool):
     return f"Опрос: {pool.title}\n\n{pool.text}"
