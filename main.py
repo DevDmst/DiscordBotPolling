@@ -44,7 +44,6 @@ handler = logging.StreamHandler()
 TIME_FORMAT = "%d.%m.%Y %H:%M"
 
 no = "*не указано*"
-example = {"name": no, "text": no, "date": None, "reactions": [], "channel": None}
 help_message = \
     """ Список команд:
     /help - вывести это.
