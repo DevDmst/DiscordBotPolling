@@ -45,7 +45,6 @@ handler = logging.StreamHandler()
 TIME_FORMAT = "%d.%m.%Y %H:%M"
 
 no = "*не указано*"
-example = {"name": no, "text": no, "date": None, "reactions": [], "channel": None}
 help_message = \
     """ Список команд:
     /help - вывести это.
@@ -149,9 +148,7 @@ async def update_chat__creating_pool(ctx, pool):
 
 
 def is_private_chat(ctx: Context):
-    if ctx.channel.type.name == "private":
-        return True
-    return False
+    return ctx.channel.type.name == "private"
 
 
 @bot.event

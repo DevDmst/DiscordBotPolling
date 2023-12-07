@@ -86,6 +86,8 @@ class Pool(Base):
     channel_id = mapped_column(Integer)
     message_id = mapped_column(Integer)
 
+    published_message_id = mapped_column(Integer)
+
     status = mapped_column(Enum(PoolStatus))
     buttons = mapped_column(DictString, default=[])
 
