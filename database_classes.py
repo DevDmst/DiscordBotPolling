@@ -1,5 +1,6 @@
 import datetime
 import json
+import logging
 import os.path
 from copy import copy
 from enum import Enum as PythonEnum
@@ -54,16 +55,18 @@ class DictString(TypeDecorator):
     impl = String
 
     def process_bind_param(self, value, dialect):
-        if value:
-            return json.dumps(value)
+        logging.info(f"Записываю {value} в базу данных")
+        if value is not None:
+            return json.dumps(value, ensure_ascii=False)
         else:
-            return "[]"
+            return "{}"
 
     def process_result_value(self, value, dialect):
-        if value:
+        logging.info(f"Извлекаю {value} из базы данных")
+        if value is not None:
             return json.loads(value)
         else:
-            return []
+            return {}
 
 class PoolStatus(PythonEnum):
     COMPLETED = "завершённый"
@@ -89,7 +92,7 @@ class Pool(Base):
     published_message_id = mapped_column(Integer)
 
     status = mapped_column(Enum(PoolStatus))
-    buttons = mapped_column(DictString, default=[])
+    buttons = mapped_column(DictString, default={})
 
     @staticmethod
     def get_pool(pool_id):

@@ -1,7 +1,9 @@
 # This example requires the 'message_content' intent.
 import asyncio
 import datetime
+import json
 import logging
+from copy import copy
 from typing import Callable
 
 import discord
@@ -96,26 +98,34 @@ class MyPopup(discord.ui.Modal, title="Добавление кнопки"):
         pool = user.get_editing_pool()
         button_name = self.button.value
         if button_name:
-            pool.buttons.append({button_name: []})
+            # pool.buttons[button_name] = []  # кнопка включает в себя название и список id пользователей, которые проголосовали по ней
+            new_dict = copy(pool.buttons)
+            new_dict[button_name] = []
+            pool.buttons = new_dict
         else:
             raise ValueError()
-
 
         # нужно обязательно ответить, иначе ошибка
         response: InteractionResponse = interaction.response
         try:
-            await response.edit_message(content=format_pool(pool), view=create_view_for_editing_pool(pool))
-        except:
+            await response.send_message("")
+        except Exception as e:
             pass
+
+        message = interaction.channel.get_partial_message(pool.message_id)
+        await message.edit(content=format_pool(pool), view=create_view_for_editing_pool(pool))
+
         pool.update(True)
-        user.close_session()
+        user.update(True)
 
     async def on_error(self, interaction: Interaction[ClientT], error: Exception, /) -> None:
         logging.error(error)
 
+
 async def callback_add_button(interaction: Interaction):
     popup = MyPopup()
     await interaction.response.send_modal(popup)
+
 
 def get_user(discord_user: Member) -> User:
     user = User.get_user(discord_user.id)
@@ -355,21 +365,6 @@ async def handler_creating_pool_errors(ctx: Context, error):
         logging.error(error)
 
 
-# async def send_pool_to_chat():
-#     user = get_user(ctx.author)
-#     if not await check_editing_pool(ctx, user):
-#         return
-#
-#
-#     pool = user.get_editing_pool()
-#     pool.channel_id = channel_id
-#
-#     await update_chat__creating_pool(ctx, pool)
-#
-#     pool.update()
-#     user.close_session()
-#     pool.close_session()
-
 def pool_str_representation(pool: Pool):
     return f"Опрос: {pool.title}\n\n{pool.text}"
 
@@ -379,28 +374,25 @@ async def edit_message_pool(message, pool):
     await message.edit(content=format_pool(pool))
 
 
-
-
-    # name = interaction.client.user.global_name
-    # text = interaction.message.content
-    # user_id = interaction.user.id
-    # user = User.get_user(user_id)
-    # pool = user.get_editing_pool()
-    #
-    # pool.buttons.append({text: []})
-    #
-    # pool.update(True)
-    # user.close_session()
-    # # interaction.channel.send()
-
-
 def create_view_for_editing_pool(pool: Pool):
     buttons = []
     if pool.buttons:
         for button in pool.buttons:
-            buttons.append(Button(label=button))
-    else:
-        pool.buttons = []
+            btn = Button(label=button)
+            pool_id = pool.id
+
+            async def add_user_to_btn_clicked(interaction: Interaction):
+                pool = Pool.get_pool(pool_id)
+                label = button.label
+                users = pool.buttons.get(label, None)
+                if users:
+                    user_id = interaction.user.id
+                    if user_id not in users[1]:
+                        users[1].append(user_id)
+                pool.update(True)
+
+            btn.callback = add_user_to_btn_clicked
+            buttons.append(btn)
     view = View()
     button = Button(label="Добавить кнопку")
     button.callback = callback_add_button
