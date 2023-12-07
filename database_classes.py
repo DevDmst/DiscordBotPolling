@@ -66,10 +66,13 @@ class Pool(Base):
     text = mapped_column(String)
     start_date = mapped_column(DateTime)
     end_date = mapped_column(DateTime)
-    reactions = mapped_column(ListString, default=[])
+    reactions = mapped_column(String)
 
-    channel_id = mapped_column(Integer)
-    message_id = mapped_column(Integer)
+    pool_channel_id = mapped_column(Integer)
+    pool_message_id = mapped_column(Integer)
+
+    edit_channel_id = mapped_column(Integer)
+    edit_message_id = mapped_column(Integer)
 
     published_message_id = mapped_column(Integer)
 
