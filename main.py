@@ -42,6 +42,15 @@ handler = logging.StreamHandler()
 # handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 
 TIME_FORMAT = "%d.%m.%Y %H:%M"
+dict_time = {
+    's': 'seconds',
+    'm': 'minutes',
+    'h': 'hours',
+    'd': 'days',
+    'w': 'weeks',
+    'M': 'months',
+    'y': 'years'
+}
 
 no = "*не указано*"
 help_message = \
@@ -79,6 +88,14 @@ pools_message = \
 
 pools_pool_message = "\"```{0}```\" от {1} до {2} в канале <#{3}> с реакциями \"{4}\""
 
+
+def format_time(args) -> datetime.datetime:
+    if args[0].startswith('<t:') and args[1].endswith('>'):
+        return utils.convert_formatted_timestamp_to_datetime(args[0])
+    else:
+        output_time = datetime.datetime.now()
+        for i in args:
+            output_time += datetime.timedelta(**{})
 
 def get_user(discord_user: Member) -> User:
     user = User.get_user(discord_user.id)
@@ -215,13 +232,13 @@ async def text(ctx, *args):
 
 @bot.command()
 @commands.check(is_private_chat)
-async def start_date(ctx, datetime_formatted):
+async def start_date(ctx, *args):
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
         return
 
     pool = user.get_editing_pool()
-    pool.start_date = utils.convert_formatted_timestamp_to_datetime(datetime_formatted)
+    pool.start_date = format_time(args)
 
     await update_chat__creating_pool(ctx, pool)
 
