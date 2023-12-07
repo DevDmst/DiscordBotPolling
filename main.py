@@ -341,8 +341,6 @@ async def edit_message_pool(message, pool):
     message = message.channel.get_partial_message(pool.message_id)
     await message.edit(content=format_pool(pool))
 
-async def test():
-    pass
 
 def format_pool(pool: Pool) -> str:
     return pool_message.format(
