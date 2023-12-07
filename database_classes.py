@@ -50,6 +50,7 @@ class ListString(TypeDecorator):
         else:
             return []
 
+
 class PoolStatus(PythonEnum):
     COMPLETED = "завершённый"
     NOT_STARTED = "не начатый"
@@ -101,6 +102,8 @@ class Pool(Base):
         if hasattr(self, "session"):
             self.session.close()
 
+    def __del__(self, *args):
+        print("Вызван del")
 
 class User(Base):
     # Определяем имя таблицы
@@ -112,13 +115,20 @@ class User(Base):
     name = mapped_column(String)
     global_name = mapped_column(String)
     pools: Mapped[List["Pool"]] = relationship(cascade="all, delete-orphan")
-    editing_pool = mapped_column(Integer)
+    editing_pool_id = mapped_column(Integer)
 
     def get_pools(self):
         return self.pools
 
     def get_editing_pool(self):
-        return Pool.get_pool(self.editing_pool)
+        return Pool.get_pool(self.editing_pool_id)
+
+    def get_pool(self, channel_id, message_id):
+        for pool in self.pools:
+            if pool.pool_message_id == message_id and pool.pool_channel_id == channel_id:
+                return Pool.get_pool(pool.id)
+
+
 
     @staticmethod
     def add_new_user(id, name, global_name):

@@ -5,7 +5,7 @@ import logging
 from typing import Callable
 
 import discord
-from discord import Message, Member, TextChannel, Embed
+from discord import Message, Member, TextChannel, Embed, Colour
 from discord.ext import commands
 from discord.ext.commands import Context, CheckFailure
 from discord.ui import Button, View
@@ -119,7 +119,7 @@ async def create_view(*args):
 
 
 async def check_editing_pool(ctx: Context, user: User):
-    if not user.editing_pool:
+    if not user.editing_pool_id:
         await ctx.send("У Вас нет текущих опросов.", delete_after=3)
         return False
     return True
@@ -138,28 +138,42 @@ def is_private_chat(ctx: Context):
 
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    message_id = payload.message_id  # ID сообщения
-    channel_id = payload.channel_id  # ID канала
+    channel_id = payload.channel_id
     channel = await bot.fetch_channel(channel_id)
-    user = get_user(payload.user_id)
-    if not user.editing_pool:
-        user.close_session()
-        return
-    pool = user.get_editing_pool()
-    if (pool.edit_channel_id == channel_id and
+    message_id = payload.message_id
+    message = await channel.fetch_message(message_id)
+    member = await bot.fetch_user(payload.user_id)
+    # message.remove_reaction("😍", member)
+    user_ = get_user(payload.user_id)
+    pool = user_.get_editing_pool()
+
+    # pool.vote_users = {}
+    # pool.vote_users["😍"] = []
+    # pool.vote_users["😍"].append(user.id)
+
+    if (pool and
+            pool.edit_channel_id == channel_id and
             pool.edit_message_id == message_id):
         if pool.reactions is None:
             pool.reactions = str(payload.emoji)
         else:
             pool.reactions += str(payload.emoji)
         logging.info("Добавлено.")
+        msg = await channel.fetch_message(pool.edit_message_id)
+        await msg.edit(content=format_pool(pool), suppress=True)
+        pool.update()
+    else:
+         if message.type.name == "text":
+            text = message.content
+            owner = int(text[2: text.find(">")])
+            user: User = get_user(owner)
+            pool = user.get_pool(channel_id, message_id)
+            ic(owner)
 
-    msg = await channel.fetch_message(pool.edit_message_id)
-    await msg.edit(content=format_pool(pool), suppress=True)
+            pool.close_session()
+#             user.close_session()
 
-    pool.update()
-    user.close_session()
-    pool.close_session()
+    # user_.close_session()
 
 
 @bot.event
@@ -168,13 +182,15 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     channel_id = payload.channel_id  # ID канала
     channel = await bot.fetch_channel(channel_id)
     user = get_user(payload.user_id)
-    if not user.editing_pool:
+    if not user.editing_pool_id:
         user.close_session()
         return
     pool = user.get_editing_pool()
     if (pool.edit_channel_id == channel_id and
             pool.edit_message_id == message_id and
+            pool.reactions and
             str(payload.emoji) in pool.reactions):
+
         out = ""
         for i in pool.reactions:
             if i != str(payload.emoji):
@@ -223,8 +239,8 @@ async def pools(ctx: Context):
 @commands.check(is_private_chat)
 async def exit_(ctx: Context, *args):
     user = get_user(ctx.author)
-    if user.editing_pool:
-        user.editing_pool = None
+    if user.editing_pool_id:
+        user.editing_pool_id = None
     user.update(True)
     await ctx.send('Готово. Можете создавать новый опрос!', )
 
@@ -233,7 +249,7 @@ async def exit_(ctx: Context, *args):
 @commands.check(is_private_chat)
 async def new_pool(ctx: Context, *args):
     user = get_user(ctx.author)
-    if user.editing_pool:
+    if user.editing_pool_id:
         await ctx.send("Вы не можете начать создавать новый опрос, "
                        "пока не завершили старый. Чтобы завершить старый опрос,"
                        " введите команду /exit_", delete_after=5)
@@ -242,7 +258,7 @@ async def new_pool(ctx: Context, *args):
         user.pools.append(pool)
         user.update()
 
-        user.editing_pool = pool.id
+        user.editing_pool_id = pool.id
         message_ = await ctx.send(format_pool(pool), suppress_embeds=True)
         pool.edit_message_id = message_.id
         pool.edit_channel_id = message_.channel.id
@@ -341,10 +357,13 @@ async def where(ctx: Context, *args):
         return
 
     pool = user.get_editing_pool()
-    pool.channel_id = channel_id
+    channel = await bot.fetch_channel(channel_id)
+    if channel is None or channel.type.name != "text":
+        await ctx.send("Данный канал не является текстовым.", delete_after=5)
+    else:
+        pool.pool_channel_id = channel_id
 
     await update_chat__creating_pool(ctx, pool)
-
     pool.update()
     user.close_session()
     pool.close_session()
@@ -352,20 +371,21 @@ async def where(ctx: Context, *args):
 
 @bot.command()
 @commands.check(is_private_chat)
-async def start(ctx: Context, index: int = 0):
+async def start(ctx: Context, index: int = -1):
     """Отправить опрос по индексу в чат"""
     user = get_user(ctx.author)
-    if not await check_editing_pool(ctx, user):
-        return
 
     pool = user.get_editing_pool()
-    pool_str = pool_str_representation(pool)
-    if pool.channel_id:
-        await bot.get_channel(pool.channel_id).send(pool_str, suppress_embeds=True)
+    if pool.pool_channel_id:
+        embed = Embed(title=pool.title, description=pool.text, color=Colour(2))
+        message = await bot.get_channel(pool.pool_channel_id).send(embed=embed)
+        for reaction in pool.reactions:
+            await message.add_reaction(reaction)
     else:
         await ctx.send("Прежде чем отправлять опрос, укажите канал для отправки (команда /where)", suppress_embeds=True)
-    pool.status = PoolStatus.PUBLISHED
 
+    pool.status = PoolStatus.PUBLISHED
+    await ctx.send()
     pool.update()
     user.close_session()
     pool.close_session()
@@ -373,7 +393,18 @@ async def start(ctx: Context, index: int = 0):
 
 @bot.command()
 @commands.check(is_private_chat)
-async def run(ctx, ):
+async def delete_all(ctx: Context):
+    """Удалить все опросы"""
+    user = get_user(ctx.author)
+    user.pools.clear()
+    user.update()
+    await ctx.send("Успешно удалены все опросы.")
+    user.close_session()
+
+
+@bot.command()
+@commands.check(is_private_chat)
+async def run(ctx: Context, ):
     """Отправить опрос в чат"""
     pass
 
@@ -423,11 +454,11 @@ def format_pool(pool: Pool) -> str:
     return pool_message.format(
         pool.title if pool.title else no,
         pool.text if pool.text else no,
-        utils.convert_datetime_to_formatted_timestamp(pool.start_date) if pool.start_date else no,
+        utils.convert_datetime_to_formatted_timestamp(pool.start_date) if pool.start_date else "*сейчас*",
         utils.convert_datetime_to_formatted_timestamp(pool.end_date) if pool.end_date else no,
         pool.reactions if pool.reactions else no,
         f"<#{pool.pool_channel_id}>" if pool.pool_channel_id else no,
     )
 
-
-bot.run(BOT_TOKEN, log_level=logging.INFO, log_handler=handler, root_logger=True)
+if __name__ == '__main__':
+    bot.run(BOT_TOKEN, log_level=logging.INFO, log_handler=handler, root_logger=True)
