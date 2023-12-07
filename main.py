@@ -97,9 +97,14 @@ def format_time(args) -> datetime.datetime:
         for i in args:
             output_time += datetime.timedelta(**{})
 
-def get_user(discord_user: Member) -> User:
-    user = User.get_user(discord_user.id)
-    if user is None:
+
+def get_user(discord_user: Member | int) -> User:
+    if isinstance(discord_user, int):
+        user_id = discord_user
+    else:
+        user_id = discord_user.id
+    user = User.get_user(user_id)
+    if user is None and not isinstance(discord_user, int):
         User.add_new_user(discord_user.id, discord_user.name, discord_user.global_name)
         user = User.get_user(discord_user.id)
     return user
@@ -121,14 +126,68 @@ async def check_editing_pool(ctx: Context, user: User):
 
 
 async def update_chat__creating_pool(ctx, pool):
-    old_msg = await ctx.channel.fetch_message(pool.message_id)
+    old_msg = await ctx.channel.fetch_message(pool.edit_message_id)
     await old_msg.delete()
     new_msg = await ctx.send(content=format_pool(pool), suppress_embeds=True)
-    pool.message_id = new_msg.id
+    pool.edit_message_id = new_msg.id
 
 
 def is_private_chat(ctx: Context):
     return ctx.channel.type.name == "private"
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    message_id = payload.message_id  # ID сообщения
+    channel_id = payload.channel_id  # ID канала
+    channel = await bot.fetch_channel(channel_id)
+    user = get_user(payload.user_id)
+    if not user.editing_pool:
+        user.close_session()
+        return
+    pool = user.get_editing_pool()
+    if (pool.edit_channel_id == channel_id and
+            pool.edit_message_id == message_id):
+        if pool.reactions is None:
+            pool.reactions = str(payload.emoji)
+        else:
+            pool.reactions += str(payload.emoji)
+        logging.info("Добавлено.")
+
+    msg = await channel.fetch_message(pool.edit_message_id)
+    await msg.edit(content=format_pool(pool), suppress=True)
+
+    pool.update()
+    user.close_session()
+    pool.close_session()
+
+
+@bot.event
+async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
+    message_id = payload.message_id  # ID сообщения
+    channel_id = payload.channel_id  # ID канала
+    channel = await bot.fetch_channel(channel_id)
+    user = get_user(payload.user_id)
+    if not user.editing_pool:
+        user.close_session()
+        return
+    pool = user.get_editing_pool()
+    if (pool.edit_channel_id == channel_id and
+            pool.edit_message_id == message_id and
+            str(payload.emoji) in pool.reactions):
+        out = ""
+        for i in pool.reactions:
+            if i != str(payload.emoji):
+                out += i
+        pool.reactions = out
+        logging.info("Удалено.")
+
+    msg = await channel.fetch_message(pool.edit_message_id)
+    await msg.edit(content=format_pool(pool), suppress=True)
+
+    pool.update()
+    user.close_session()
+    pool.close_session()
 
 
 @bot.event
@@ -153,8 +212,8 @@ async def pools(ctx: Context):
             i.title if i.title else no,
             i.start_date if i.start_date else no,
             i.end_date if i.end_date else no,
-            f"<#{i.channel_id}>" if i.channel_id else no,
-            ''.join(i.reactions) if i.reactions else no,
+            f"<#{i.pool_channel_id}>" if i.pool_channel_id else no,
+            i.reactions if i.reactions else no,
         )
 
     await ctx.send(output)
@@ -185,7 +244,8 @@ async def new_pool(ctx: Context, *args):
 
         user.editing_pool = pool.id
         message_ = await ctx.send(format_pool(pool), suppress_embeds=True)
-        pool.message_id = message_.id
+        pool.edit_message_id = message_.id
+        pool.edit_channel_id = message_.channel.id
 
         user.update(True)
 
@@ -292,7 +352,7 @@ async def where(ctx: Context, *args):
 
 @bot.command()
 @commands.check(is_private_chat)
-async def start(ctx: Context, index: int=0):
+async def start(ctx: Context, index: int = 0):
     """Отправить опрос по индексу в чат"""
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
@@ -365,8 +425,8 @@ def format_pool(pool: Pool) -> str:
         pool.text if pool.text else no,
         utils.convert_datetime_to_formatted_timestamp(pool.start_date) if pool.start_date else no,
         utils.convert_datetime_to_formatted_timestamp(pool.end_date) if pool.end_date else no,
-        ('[' + ''.join(pool.reactions) + ']') if pool.reactions else no,
-        f"<#{pool.channel_id}>" if pool.channel_id else no,
+        pool.reactions if pool.reactions else no,
+        f"<#{pool.pool_channel_id}>" if pool.pool_channel_id else no,
     )
 
 
