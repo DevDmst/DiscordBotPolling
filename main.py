@@ -15,7 +15,7 @@ from icecream import ic
 
 import utils
 from database_classes import Pool, User, PoolStatus
-
+from sheduler import scheduler, schedule_start_pool, schedule_end_pool
 
 # Создайте экземпляр планировщика
 # scheduler = AsyncIOScheduler()
