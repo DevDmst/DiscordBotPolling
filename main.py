@@ -1,11 +1,12 @@
 # This example requires the 'message_content' intent.
 import asyncio
+import copy
 import datetime
 import logging
 from typing import Callable
 
 import discord
-from discord import Message, Member, TextChannel, Embed, Colour
+from discord import Message, Member, TextChannel, Embed, Colour, AllowedMentions
 from discord.ext import commands
 from discord.ext.commands import Context, CheckFailure
 from discord.ui import Button, View
@@ -14,6 +15,7 @@ from icecream import ic
 
 import utils
 from database_classes import Pool, User, PoolStatus
+
 
 # Создайте экземпляр планировщика
 # scheduler = AsyncIOScheduler()
@@ -90,7 +92,7 @@ pools_pool_message = "\"```{0}```\" от {1} до {2} в канале <#{3}> с 
 
 
 def format_time(args) -> datetime.datetime:
-    if args[0].startswith('<t:') and args[1].endswith('>'):
+    if args[0].startswith('<t:') and args[0].endswith('>'):
         return utils.convert_formatted_timestamp_to_datetime(args[0])
     else:
         output_time = datetime.datetime.now()
@@ -136,74 +138,180 @@ def is_private_chat(ctx: Context):
     return ctx.channel.type.name == "private"
 
 
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+async def pool_reactions_modify(payload: discord.RawReactionActionEvent, add: bool = False, remove: bool = False):
+    """Редактирование реакций в личных сообщениях с ботом"""
     channel_id = payload.channel_id
     channel = await bot.fetch_channel(channel_id)
     message_id = payload.message_id
     message = await channel.fetch_message(message_id)
     member = await bot.fetch_user(payload.user_id)
-    # message.remove_reaction("😍", member)
+
     user_ = get_user(payload.user_id)
     pool = user_.get_editing_pool()
+
+    if (user_ and pool and
+            pool.edit_channel_id == channel_id and
+            pool.edit_message_id == message_id):
+        if add:
+            if pool.reactions is None:
+                pool.reactions = str(payload.emoji)
+            else:
+                pool.reactions += str(payload.emoji)
+
+            logging.info("Добавлена новая реакция.")
+        elif remove:
+            out = ""
+            for i in pool.reactions:
+                if i != str(payload.emoji):
+                    out += i
+            pool.reactions = out
+            logging.info("Удалено.")
+
+        msg = await channel.fetch_message(pool.edit_message_id)
+        await msg.edit(content=format_pool(pool), suppress=True)
+        pool.update()
+
+
+async def vote_pool(payload: discord.RawReactionActionEvent, add=False, remove=False):
+    """Приём голосов от пользователей в опубликованном опросе"""
+    if payload.member.bot:
+        return
+    logging.info("Изменение реакции!")
+    channel = await bot.fetch_channel(payload.channel_id)
+    message = await channel.fetch_message(payload.message_id)
+
+    rfind = message.content.rfind("@")
+    author_id = int(message.content[rfind + 1:message.content.rfind(">")])
+    user = User.get_user(author_id)
+
+    pool = user.get_pool(channel.id, message.id)
+    current_emoji = str(payload.emoji)
+
+    votes = dict(pool.vote_users)
+
+    if current_emoji not in pool.reactions:
+        await message.remove_reaction(current_emoji, payload.member)
+        return
+
+    if add:
+        if current_emoji not in votes:
+            votes[current_emoji] = []
+
+        for emoji, users in votes.items():
+            if user.id not in users:
+                users.append(user.id)
+            else:
+                users.remove(user.id)
+                await message.remove_reaction(emoji, payload.member)
+    else:
+        for emoji, users in votes.items():
+            if user.id in users:
+                users.remove(user.id)
+                break
+
+    pool.vote_users = votes
+    pool.update(True)
+    user.close_session()
+
+
+@bot.event
+async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
+    if payload.member is None:
+        await pool_reactions_modify(payload, add=True)
+    else:
+        await vote_pool(payload, add=True)
+
+    # # message.remove_reaction("😍", member)
+    # user_ = get_user(payload.user_id)
+    # pool = user_.get_editing_pool()
 
     # pool.vote_users = {}
     # pool.vote_users["😍"] = []
     # pool.vote_users["😍"].append(user.id)
 
-    if (pool and
-            pool.edit_channel_id == channel_id and
-            pool.edit_message_id == message_id):
-        if pool.reactions is None:
-            pool.reactions = str(payload.emoji)
-        else:
-            pool.reactions += str(payload.emoji)
-        logging.info("Добавлено.")
-        msg = await channel.fetch_message(pool.edit_message_id)
-        await msg.edit(content=format_pool(pool), suppress=True)
-        pool.update()
-    else:
-         if message.type.name == "text":
-            text = message.content
-            owner = int(text[2: text.find(">")])
-            user: User = get_user(owner)
-            pool = user.get_pool(channel_id, message_id)
-            ic(owner)
+    # if payload.member is None:
+    #     # сообщение пришло из личного чата
+    #     pass
+    # else:
+    #     # сообщение пришло из публичного чата
+    #     pass
 
-            pool.close_session()
+    # if (user_ and pool and
+    #         pool.edit_channel_id == channel_id and
+    #         pool.edit_message_id == message_id):
+    #     if pool.reactions is None:
+    #         pool.reactions = str(payload.emoji)
+    #     else:
+    #         pool.reactions += str(payload.emoji)
+    #
+    #     logging.info("Добавлена новая реакция.")
+    #
+    #     msg = await channel.fetch_message(pool.edit_message_id)
+    #     await msg.edit(content=format_pool(pool), suppress=True)
+    #     pool.update()
+    # else:
+    #     if message.type.name == "text" and message.type.name == "default":
+    #         text = message.content
+    #         owner = int(text[2: text.find(">")])
+    #         user: User = get_user(owner)
+    #         pool = user.get_pool(channel_id, message_id)
+    #         current_emoji = str(payload.emoji)
+    #         if current_emoji not in pool.vote_users:
+    #             pool.vote_users[current_emoji] = []
+    #
+    #         for emoji, users_ in pool.vote_users.items():
+    #             if user.id not in users_:
+    #                 users_.append(user.id)
+    #             else:
+    #                 users_.remove(user.id)
+    #                 await message.remove_reaction(emoji, user)
+    #         copy_copy = copy.copy(pool.vote_users)
+    #         pool.vote_users = copy_copy
+    #
+    #         pool.update(True)
+
+
 #             user.close_session()
 
-    # user_.close_session()
+# user_.close_session()
 
 
 @bot.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-    message_id = payload.message_id  # ID сообщения
-    channel_id = payload.channel_id  # ID канала
-    channel = await bot.fetch_channel(channel_id)
-    user = get_user(payload.user_id)
-    if not user.editing_pool_id:
-        user.close_session()
-        return
-    pool = user.get_editing_pool()
-    if (pool.edit_channel_id == channel_id and
-            pool.edit_message_id == message_id and
-            pool.reactions and
-            str(payload.emoji) in pool.reactions):
+    # когда через бота удаляешь чью-то реакцию, то member == None
+    # TODO не знаю, как это разрулить
 
-        out = ""
-        for i in pool.reactions:
-            if i != str(payload.emoji):
-                out += i
-        pool.reactions = out
-        logging.info("Удалено.")
+    if payload.member is None:
+        await pool_reactions_modify(payload, remove=True)
+    else:
+        await vote_pool(payload, remove=True)
 
-    msg = await channel.fetch_message(pool.edit_message_id)
-    await msg.edit(content=format_pool(pool), suppress=True)
-
-    pool.update()
-    user.close_session()
-    pool.close_session()
+    # message_id = payload.message_id  # ID сообщения
+    # channel_id = payload.channel_id  # ID канала
+    # channel = await bot.fetch_channel(channel_id)
+    # user = get_user(payload.user_id)
+    # if not user.editing_pool_id:
+    #     user.close_session()
+    #     return
+    # pool = user.get_editing_pool()
+    # if (pool.edit_channel_id == channel_id and
+    #         pool.edit_message_id == message_id and
+    #         pool.reactions and
+    #         str(payload.emoji) in pool.reactions):
+    #
+    #     out = ""
+    #     for i in pool.reactions:
+    #         if i != str(payload.emoji):
+    #             out += i
+    #     pool.reactions = out
+    #     logging.info("Удалено.")
+    #
+    # msg = await channel.fetch_message(pool.edit_message_id)
+    # await msg.edit(content=format_pool(pool), suppress=True)
+    #
+    # pool.update()
+    # user.close_session()
+    # pool.close_session()
 
 
 @bot.event
@@ -376,19 +484,26 @@ async def start(ctx: Context, index: int = -1):
     user = get_user(ctx.author)
 
     pool = user.get_editing_pool()
+    if not pool:
+        await ctx.send("Сейчас нет редактируемого опроса. Создайте или выберите опрос, после чего повторите команду.")
+        user.close_session()
+        return
     if pool.pool_channel_id:
-        embed = Embed(title=pool.title, description=pool.text, color=Colour(2))
-        message = await bot.get_channel(pool.pool_channel_id).send(embed=embed)
+        channel = bot.get_channel(pool.pool_channel_id)
+        message = await channel.send(
+            content=pool.publish_format(),
+            mention_author=True,
+            allowed_mentions=AllowedMentions(everyone=True)
+        )
+        pool.pool_message_id = message.id
         for reaction in pool.reactions:
             await message.add_reaction(reaction)
     else:
         await ctx.send("Прежде чем отправлять опрос, укажите канал для отправки (команда /where)", suppress_embeds=True)
 
     pool.status = PoolStatus.PUBLISHED
-    await ctx.send()
-    pool.update()
+    pool.update(True)
     user.close_session()
-    pool.close_session()
 
 
 @bot.command()
@@ -405,8 +520,57 @@ async def delete_all(ctx: Context):
 @bot.command()
 @commands.check(is_private_chat)
 async def run(ctx: Context, ):
-    """Отправить опрос в чат"""
-    pass
+    """После завершения редактирования опроса, нужно утвердить его на запуск(планирование)."""
+    user = get_user(ctx.author)
+    if not await check_editing_pool(ctx, user):
+        return
+
+    await schedule_start_pool(user.get_editing_pool(), send_pool_to_channel)
+    schedule_end_pool(user.get_editing_pool(), get_pool_results)
+
+
+@bot.command()
+@commands.check(is_private_chat)
+async def test(ctx: Context, index: int = -1):
+    """Отправить опрос по индексу в чат"""
+    user = get_user(ctx.author)
+
+    pool = Pool()
+    pool.text = "Кто вам больше нравится: Эмма Уотсон(🥺) или Эмили Кларк(😎)?"
+    pool.reactions = "🥺😎"
+    pool.title = "Тестовый опрос"
+    pool.start_date = datetime.datetime.utcnow()
+    pool.end_date = datetime.datetime.utcnow() + datetime.timedelta(minutes=1)
+    pool.pool_channel_id = 1180512989590327296
+
+    user.pools.append(pool)
+    user.update()  # сохраняем pool в бд и связываем его с user
+
+    channel = bot.get_channel(pool.pool_channel_id)
+    message = await channel.send(content=pool.publish_format())
+    pool.pool_message_id = message.id
+    for reaction in pool.reactions:
+        await message.add_reaction(reaction)
+
+    user.update(True)
+
+
+async def send_pool_to_channel(pool_id):
+    pool = Pool.get_pool(pool_id)
+    embed = Embed(title=pool.title, description=pool.text, color=Colour(2))
+    message = await bot.get_channel(pool.pool_channel_id).send(embed=embed)
+    for reaction in pool.reactions:
+        await message.add_reaction(reaction)
+
+
+async def get_pool_results(pool_id):
+    pool = Pool.get_pool(pool_id)
+    admin_channel = await bot.fetch_channel(pool.edit_channel_id)
+    await admin_channel.send("Опрос завершился! Вот результаты!")
+    pool_channel = await bot.fetch_channel(pool.pool_channel_id)
+    message = await pool_channel.fetch_message(pool.pool_message_id)
+    result = pool.reactions
+    await admin_channel.send()
 
 
 @new_pool.error
@@ -417,6 +581,7 @@ async def run(ctx: Context, ):
 @end_date.error
 @where.error
 @pools.error
+@run.error
 async def handler_creating_pool_errors(ctx: Context, error):
     if isinstance(error, CheckFailure):
         await ctx.message.delete(delay=4)
@@ -459,6 +624,7 @@ def format_pool(pool: Pool) -> str:
         pool.reactions if pool.reactions else no,
         f"<#{pool.pool_channel_id}>" if pool.pool_channel_id else no,
     )
+
 
 if __name__ == '__main__':
     bot.run(BOT_TOKEN, log_level=logging.INFO, log_handler=handler, root_logger=True)
