@@ -121,8 +121,6 @@ def get_user(discord_user: Member | int) -> User:
 
 
 async def create_view(*args):
-    #     btn = Button(label=label)
-    #     btn.callback = callback
     view = View()
     view.add_item(*args)
     return view
@@ -223,92 +221,11 @@ async def vote_pool(payload: discord.RawReactionActionEvent, add=False):
 @bot.event
 async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
     await handle_reactions(payload, True)
-    # # message.remove_reaction("😍", member)
-    # user_ = get_user(payload.user_id)
-    # pool = user_.get_editing_pool()
-
-    # pool.vote_users = {}
-    # pool.vote_users["😍"] = []
-    # pool.vote_users["😍"].append(user.id)
-
-    # if payload.member is None:
-    #     # сообщение пришло из личного чата
-    #     pass
-    # else:
-    #     # сообщение пришло из публичного чата
-    #     pass
-
-    # if (user_ and pool and
-    #         pool.edit_channel_id == channel_id and
-    #         pool.edit_message_id == message_id):
-    #     if pool.reactions is None:
-    #         pool.reactions = str(payload.emoji)
-    #     else:
-    #         pool.reactions += str(payload.emoji)
-    #
-    #     logging.info("Добавлена новая реакция.")
-    #
-    #     msg = await channel.fetch_message(pool.edit_message_id)
-    #     await msg.edit(content=format_pool(pool), suppress=True)
-    #     pool.update()
-    # else:
-    #     if message.type.name == "text" and message.type.name == "default":
-    #         text = message.content
-    #         owner = int(text[2: text.find(">")])
-    #         user: User = get_user(owner)
-    #         pool = user.get_pool(channel_id, message_id)
-    #         current_emoji = str(payload.emoji)
-    #         if current_emoji not in pool.vote_users:
-    #             pool.vote_users[current_emoji] = []
-    #
-    #         for emoji, users_ in pool.vote_users.items():
-    #             if user.id not in users_:
-    #                 users_.append(user.id)
-    #             else:
-    #                 users_.remove(user.id)
-    #                 await message.remove_reaction(emoji, user)
-    #         copy_copy = copy.copy(pool.vote_users)
-    #         pool.vote_users = copy_copy
-    #
-    #         pool.update(True)
-
-
-#             user.close_session()
-
-# user_.close_session()
 
 
 @bot.event
 async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-
     await handle_reactions(payload, False)
-
-    # message_id = payload.message_id  # ID сообщения
-    # channel_id = payload.channel_id  # ID канала
-    # channel = await bot.fetch_channel(channel_id)
-    # user = get_user(payload.user_id)
-    # if not user.editing_pool_id:
-    #     user.close_session()
-    #     return
-    # pool = user.get_editing_pool()
-    # if (pool.edit_channel_id == channel_id and
-    #         pool.edit_message_id == message_id and
-    #         pool.reactions and
-    #         str(payload.emoji) in pool.reactions):
-    #
-    #     out = ""
-    #     for i in pool.reactions:
-    #         if i != str(payload.emoji):
-    #             out += i
-    #     pool.reactions = out
-    #     logging.info("Удалено.")
-    #
-    # msg = await channel.fetch_message(pool.edit_message_id)
-    # await msg.edit(content=format_pool(pool), suppress=True)
-    #
-    # pool.update()
-    # user.close_session()
-    # pool.close_session()
 
 
 async def handle_reactions(payload: discord.RawReactionActionEvent, add=False):
@@ -316,11 +233,15 @@ async def handle_reactions(payload: discord.RawReactionActionEvent, add=False):
     if str_ not in channels_messages:
         return
     # когда через бота удаляешь чью-то реакцию, то member == None
+
     # TODO не знаю, как это разрулить
-    if payload.member is None and payload.user_id in admin_users:  # редактирование
+    if not (channel := bot.get_channel(payload.channel_id)):
+        channel = await bot.fetch_channel(payload.channel_id)
+#     if payload.member is None and payload.user_id in admin_users:  # редактирование
+    if channel.type.name == "private":
         await pool_reactions_modify(payload, add)
     else:
-        if payload.member.bot:
+        if payload.member and payload.member.bot:
             return
         await vote_pool(payload, add)
 

@@ -57,14 +57,14 @@ class DictString(TypeDecorator):
 
     def process_bind_param(self, value, dialect):
         if value is not None:
-            logging.info(f"Сохраняю данные ||{value}|| в базе данных")
+           # logging.info(f"Сохраняю данные ||{value}|| в базе данных")
             return json.dumps(value, ensure_ascii=False)
         else:
             return "{}"
 
     def process_result_value(self, value, dialect):
         if value is not None:
-            logging.info(f"Получаю данные ||{value}|| из базы данных")
+            #logging.info(f"Получаю данные ||{value}|| из базы данных")
             return json.loads(value)
         else:
             return {}
