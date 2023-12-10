@@ -85,7 +85,7 @@ class Pool(Base):
     text = mapped_column(String)
     start_date = mapped_column(DateTime)
     end_date = mapped_column(DateTime)
-    reactions = mapped_column(String)
+    reactions = mapped_column(String, default="")
     vote_users = mapped_column(DictString, default={})
     pool_channel_id = mapped_column(Integer)
     pool_message_id = mapped_column(Integer)
@@ -148,7 +148,7 @@ class User(Base):
     pools: Mapped[List["Pool"]] = relationship(cascade="all, delete-orphan")
     editing_pool_id = mapped_column(Integer)
 
-    def get_pools(self):
+    def get_pools(self) -> List[Pool]:
         return self.pools
 
     def get_editing_pool(self):
@@ -183,8 +183,7 @@ class User(Base):
         session = Session()
         stmt = select(User)
         users = session.scalars(stmt).fetchall()
-        session.close()
-        return users
+        return users, session
 
 
     def update(self, need_close_session=False):
