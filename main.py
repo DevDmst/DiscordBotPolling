@@ -1,9 +1,7 @@
-# This example requires the 'message_content' intent.
 import asyncio
 import copy
 import datetime
 import logging
-from typing import Callable
 
 import discord
 from discord import Message, Member, TextChannel, Embed, Colour, AllowedMentions
@@ -16,18 +14,6 @@ from icecream import ic
 import utils
 from database_classes import Pool, User, PoolStatus
 from sheduler import scheduler, schedule_start_pool, schedule_end_pool
-
-# Создайте экземпляр планировщика
-# scheduler = AsyncIOScheduler()
-
-# Установите время запуска (здесь установлено на 2023-12-04 12:00:00)
-# trigger_time = datetime.datetime(2023, 12, 4, 12, 0, 0)
-
-# Запланируйте задачу
-# scheduler.add_job(..., trigger='date', run_date=trigger_time)
-
-# Запустите планировщик
-# scheduler.start()
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -43,8 +29,11 @@ BOT_TOKEN = bot_config["bot_token"]
 handler = logging.StreamHandler()
 # handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 
+no = "*не указано*"
 TIME_FORMAT = "%d.%m.%Y %H:%M"
-dict_time = {
+ints = "1234567890"
+pools_pool_message = "\"```{0}```\" от {1} до {2} в канале <#{3}> с реакциями \"{4}\""
+time_dict = {
     's': 'seconds',
     'm': 'minutes',
     'h': 'hours',
@@ -53,8 +42,6 @@ dict_time = {
     'M': 'months',
     'y': 'years'
 }
-
-no = "*не указано*"
 help_message = \
     """ Список команд:
     /help - вывести это.
@@ -70,7 +57,6 @@ help_message = \
     /pools - показать все опросы
     Даты можно получить на сайте https://hammertime.cyou/ru
     """
-
 pool_message = \
     """Опрос(/exit)
     Заголовок: {0} (/title <название>)
@@ -83,12 +69,10 @@ pool_message = \
     Даты можно получить на сайте https://hammertime.cyou/ru
     Начать опрос: /start
     """
-
 pools_message = \
     """Список твоих опросов:
      {0}"""
 
-pools_pool_message = "\"```{0}```\" от {1} до {2} в канале <#{3}> с реакциями \"{4}\""
 
 channels_messages = []
 admin_users = []
@@ -115,10 +99,13 @@ init_channels_and_messages(channels_messages, admin_users)
 def format_time(args) -> datetime.datetime:
     if args[0].startswith('<t:') and args[0].endswith('>'):
         return utils.convert_formatted_timestamp_to_datetime(args[0])
+    elif args[0] == "now":
+        return None
     else:
-        output_time = datetime.datetime.now()
+        time = datetime.datetime.now()
         for i in args:
-            output_time += datetime.timedelta(**{})
+            time += datetime.timedelta(**{time_dict[i[-1]]: int(i[:-1])})
+        return time
 
 
 def get_user(discord_user: Member | int) -> User:
@@ -346,13 +333,18 @@ async def on_ready():
 @bot.command()
 @commands.check(is_private_chat)
 async def help(ctx: Context):
+    # TODO: использовать встроенный help
     await ctx.send(help_message)
+
 
 
 @bot.command()
 @commands.check(is_private_chat)
 async def pools(ctx: Context):
     user = get_user(ctx.author)
+    if not user.pools:
+        await ctx.send("У вас нет в данный момент опросов.")
+        return
 
     output = ""
     for i in user.pools:
@@ -457,13 +449,13 @@ async def start_date(ctx, *args):
 
 @bot.command()
 @commands.check(is_private_chat)
-async def end_date(ctx, datetime_formatted):
+async def end_date(ctx, *args):
     user = get_user(ctx.author)
     if not await check_editing_pool(ctx, user):
         return
 
     pool = user.get_editing_pool()
-    pool.end_date = utils.convert_formatted_timestamp_to_datetime(datetime_formatted)
+    pool.end_date = format_time(args)
 
     await update_chat__creating_pool(ctx, pool)
 
@@ -619,20 +611,7 @@ async def handler_creating_pool_errors(ctx: Context, error):
         logging.error(error)
 
 
-# async def send_pool_to_chat():
-#     user = get_user(ctx.author)
-#     if not await check_editing_pool(ctx, user):
-#         return
-#
-#
-#     pool = user.get_editing_pool()
-#     pool.channel_id = channel_id
-#
-#     await update_chat__creating_pool(ctx, pool)
-#
-#     pool.update()
-#     user.close_session()
-#     pool.close_session()
+
 
 def pool_str_representation(pool: Pool):
     return f"Опрос: {pool.title}\n\n{pool.text}"
